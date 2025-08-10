@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Validation de Selfie — BLS/OZ</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 24px; }
+      .card { max-width: 720px; margin: 0 auto; padding: 24px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+      h1 { font-size: 1.4rem; margin: 0 0 12px; }
+      p { color: #444; }
+      .consent { margin: 16px 0; }
+      button { padding: 12px 16px; border: 0; border-radius: 10px; cursor: pointer; }
+      .primary { background: #0f766e; color: white; }
+      .muted { background: #e5e7eb; color: #111827; }
+      .row { display: flex; gap: 12px; align-items: center; }
+      #status { margin-top: 12px; font-size: .95rem; color: #2563eb; }
+      #error { margin-top: 12px; color: #b91c1c; }
+      .footer { font-size: .85rem; color: #6b7280; margin-top: 24px; }
+    </style>
+
+    <!-- OZ/BLS SDK officiels (exposés par BLS) -->
+    <script src="https://web-sdk.prod.cdn.spain.ozforensics.com/blsinternational/plugin/ozliveness_core.js?ver=1.7.14-89-2-1" type="text/javascript"></script>
+    <script src="https://web-sdk.prod.cdn.spain.ozforensics.com/blsinternational/plugin/add_lang/en.js?ver=1.7.14-89-2-1" type="text/javascript" async></script>
+    <script src="https://web-sdk.prod.cdn.spain.ozforensics.com/blsinternational/plugin/add_lang/es.js?ver=1.7.14-89-2-1" type="text/javascript" async></script>
+    <script src="https://web-sdk.prod.cdn.spain.ozforensics.com/blsinternational/plugin/add_lang/ru.js?ver=1.7.14-89-2-1" type="text/javascript" async></script>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Validation de selfie</h1>
+      <p>
+        Pour poursuivre votre demande, nous devons vérifier votre présence via un contrôle de vitalité (liveness) fourni par notre prestataire.
+        Aucune donnée biométrique n’est stockée par notre site ; le traitement est réalisé par le prestataire certifié.
+      </p>
+
+      <div class="consent">
+        <label>
+          <input type="checkbox" id="consent" />
+          J’ai lu et j’accepte le traitement de mon image à des fins de vérification de liveness.
+        </label>
+      </div>
+
+      <div class="row">
+        <button id="start" class="primary">Démarrer la vérification</button>
+        <button id="cancel" class="muted">Annuler</button>
+      </div>
+
+      <div id="status"></div>
+      <div id="error"></div>
+
+      <div class="footer">
+        En démarrant, vous acceptez nos conditions et la politique de confidentialité. Ce module utilise le SDK
+        <strong>BLS/OZ Forensics</strong> et peut nécessiter l’accès à votre caméra.
+      </div>
+    </div>
+
+    <script>
+      const $ = (s) => document.querySelector(s);
+      const params = new URLSearchParams(location.search);
+      const sid = params.get('sid');
+
+      const status = (t) => { $('#status').textContent = t || ''; };
+      const showErr = (t) => { $('#error').textContent = t || ''; };
+
+      async function fetchSession() {
+        const res = await fetch(`/api/selfie/session?sid=${encodeURIComponent(sid)}`);
+        if (!res.ok) throw new Error('Impossible d’obtenir la session');
+        return res.json();
+      }
+
+      async function postResult(payload) {
+        await fetch('/api/selfie/result', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+
+      async function run() {
+        $('#error').textContent = '';
+        status('Préparation…');
+
+        if (!$('#consent').checked) {
+          showErr('Veuillez cocher la case de consentement.');
+          status('');
+          return;
+        }
+
+        if (!sid) {
+          showErr('Lien invalide (SID manquant).');
+          status('');
+          return;
+        }
+
+        try {
+          const { sessionToken, GUID } = await fetchSession();
+          status('Ouverture du module selfie…');
+
+          // Démarre le module officiel OZ Liveness
+          // La config exacte peut varier selon votre intégration BLS.
+          // Référez-vous à leur documentation si des options supplémentaires sont requises.
+          window.ozliveness.open({
+            sessionToken,
+            GUID,
+            lang: 'fr',
+            onComplete: async function (result) {
+              status('Traitement du résultat…');
+              try {
+                await postResult({ sid, status: result?.status || 'unknown', payload: result });
+                status('Terminé.');
+                setTimeout(() => {
+                  location.href = 'thankyou.html';
+                }, 800);
+              } catch (e) {
+                console.error(e);
+                showErr('Erreur en enregistrant le résultat.');
+                status('');
+              }
+            },
+            onError: function (e) {
+              console.error('OZ error', e);
+              showErr('Une erreur est survenue dans le module OZ.');
+              status('');
+            },
+          });
+        } catch (e) {
+          console.error(e);
+          showErr('Erreur lors de la préparation du selfie.');
+          status('');
+        }
+      }
+
+      $('#start').addEventListener('click', run);
+      $('#cancel').addEventListener('click', () => {
+        location.href = 'thankyou.html?canceled=1';
+      });
+    </script>
+  </body>
+</html>
