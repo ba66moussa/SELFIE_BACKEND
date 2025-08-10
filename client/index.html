@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Validation Selfie - BLS/OZ</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;max-width:760px;margin:2rem auto;padding:0 1rem;color:#222}
+    .card{border:1px solid #ddd;border-radius:12px;padding:1rem 1.25rem;margin:1rem 0;box-shadow:0 4px 14px rgba(0,0,0,.04)}
+    .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+    label{font-weight:600}
+    input[type="text"]{padding:.55rem .75rem;border:1px solid #bbb;border-radius:8px;width:100%}
+    button{padding:.7rem 1rem;border:0;border-radius:10px;background:#0d6efd;color:#fff;cursor:pointer}
+    button:disabled{opacity:.4;cursor:not-allowed}
+    .muted{color:#666;font-size:.925rem}
+    .ok{color:#137c07}
+    .err{color:#b00020}
+    .hidden{display:none}
+    .divider{height:1px;background:#eee;margin:1rem 0}
+    #log{white-space:pre-wrap;background:#fafafa;border:1px dashed #ddd;padding:.5rem;border-radius:8px}
+  </style>
+
+  <!-- OZ/BLS SDK (adapt to your tenant/version if needed) -->
+  <script src="https://web-sdk.prod.cdn.spain.ozforensics.com/blsinternational/plugin/ozliveness_core.js?ver=1.7.14-89-2-1" type="text/javascript"></script>
+  <script src="https://web-sdk.prod.cdn.spain.ozforensics.com/blsinternational/plugin/add_lang/en.js?ver=1.7.14-89-2-1" type="text/javascript" async></script>
+  <script src="https://web-sdk.prod.cdn.spain.ozforensics.com/blsinternational/plugin/add_lang/fr.js?ver=1.7.14-89-2-1" type="text/javascript" async></script>
+  <script src="https://web-sdk.prod.cdn.spain.ozforensics.com/blsinternational/plugin_liveness.php"></script>
+</head>
+<body>
+  <h1>Validation du selfie (BLS/OZ)</h1>
+  <p class="muted">Veuillez lire et accepter le consentement, puis lancez la vérification du selfie.</p>
+
+  <div class="card">
+    <div class="row">
+      <div style="flex:1">
+        <label>Identifiant client</label>
+        <input id="userId" type="text" placeholder="ex: usr_123" />
+      </div>
+      <div style="flex:1">
+        <label>Référence RDV</label>
+        <input id="appointmentRef" type="text" placeholder="ex: appt_456" />
+      </div>
+    </div>
+    <p class="muted">Ces champs sont pré-remplis si vous venez du lien envoyé par l'agent.</p>
+  </div>
+
+  <div class="card">
+    <h3>Consentement</h3>
+    <div style="max-height:140px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:.5rem" id="consentText">
+      <p><strong>Objet :</strong> Vérification d’identité par capture de selfie (liveness) via le prestataire OZ Forensics dans le cadre de la prise de rendez-vous BLS.</p>
+      <ul>
+        <li>J’autorise la capture et le traitement de mon image pour vérifier que je suis une personne réelle.</li>
+        <li>Les données sont traitées selon la politique de confidentialité de BLS/OZ et uniquement pour mon dossier.</li>
+        <li>Je peux retirer mon consentement avant la soumission.</li>
+      </ul>
+      <p>Version : <code>v1.0-fr</code></p>
+    </div>
+    <label class="row"><input type="checkbox" id="consentChk"> <span>J’ai lu et j’accepte.</span></label>
+    <button id="startBtn" disabled>Lancer la vérification</button>
+    <div id="status" class="muted"></div>
+  </div>
+
+  <div class="card">
+    <h3>Journal</h3>
+    <div id="log" class="muted">En attente…</div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const log = (msg) => { const el = $("log"); el.textContent += "\n" + msg; };
+
+    // Prefill from URL params
+    const params = new URLSearchParams(location.search);
+    $("userId").value = params.get("userId") || "";
+    $("appointmentRef").value = params.get("appointmentRef") || "";
+
+    $("consentChk").addEventListener("change", e => {
+      $("startBtn").disabled = !e.target.checked;
+    });
+
+    async function postJSON(url, data) {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status + ": " + (await r.text()));
+      return r.json();
+    }
+
+    async function startFlow() {
+      const userId = $("userId").value.trim();
+      const appointmentRef = $("appointmentRef").value.trim();
+      if (!userId || !appointmentRef) {
+        alert("Merci de renseigner Identifiant client et Référence RDV.");
+        return;
+      }
+      const consentText = $("consentText").innerText.trim();
+      const consentVersion = "v1.0-fr";
+
+      try {
+        $("status").textContent = "Enregistrement du consentement…";
+        const consentRes = await postJSON("/api/consent", {
+          userId, appointmentRef, consentText, consentVersion, userAgent: navigator.userAgent
+        });
+        log("Consent OK: " + JSON.stringify(consentRes));
+
+        $("status").textContent = "Création de session liveness…";
+        const session = await postJSON("/api/session", { userId, appointmentRef });
+        log("Session: " + JSON.stringify(session));
+
+        $("status").textContent = "Initialisation du SDK…";
+
+        // --- OZ/BLS SDK start ---
+        // Depending on your tenant/version the init API may differ.
+        // Common patterns: OZLivenessCore.start / OZLiveness.start / window.startLiveness
+        // Replace the call below with the exact documented one if needed.
+        const token = session.sessionToken;
+        const guid  = session.guid;
+
+        // Defensive checks
+        const startFn = window.OZLivenessCore?.start || window.OZLiveness?.start || window.startLiveness;
+        if (!startFn) {
+          log("⚠️ API de démarrage du SDK introuvable. Vérifiez les scripts plugin/ozliveness_core.js et plugin_liveness.php.");
+          $("status").innerHTML = "<span class='err'>SDK non initialisé</span>";
+          return;
+        }
+
+        // Example init (adjust options to your tenant)
+        startFn({
+          token: token,
+          guid: guid,
+          // language: 'fr',
+          // uiContainerId: 'oz-container', // if SDK supports mounting in a div
+          onComplete: function (result) {
+            log("onComplete: " + JSON.stringify(result));
+            $("status").innerHTML = "<span class='ok'>Vérification terminée. Merci !</span>";
+          },
+          onError: function (err) {
+            log("onError: " + JSON.stringify(err));
+            $("status").innerHTML = "<span class='err'>Erreur SDK: " + (err?.message || err) + "</span>";
+          }
+        });
+      } catch (e) {
+        console.error(e);
+        log("Erreur: " + e.message);
+        $("status").innerHTML = "<span class='err'>"+ e.message +"</span>";
+      }
+    }
+
+    $("startBtn").addEventListener("click", startFlow);
+    log("Prêt.");
+  </script>
+</body>
+</html>

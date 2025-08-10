@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Générateur de lien selfie</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;max-width:740px;margin:2rem auto;padding:0 1rem;color:#222}
+    .card{border:1px solid #ddd;border-radius:12px;padding:1rem 1.25rem;margin:1rem 0;box-shadow:0 4px 14px rgba(0,0,0,.04)}
+    input{padding:.55rem .75rem;border:1px solid #bbb;border-radius:8px;width:100%}
+    button{padding:.6rem 1rem;border:0;border-radius:10px;background:#0d6efd;color:#fff;cursor:pointer}
+    .muted{color:#666;font-size:.925rem}
+    .row{display:flex;gap:.5rem;flex-wrap:wrap}
+  </style>
+</head>
+<body>
+  <h1>Générer le lien client</h1>
+
+  <div class="card">
+    <label>URL publique de la page client (index.html)</label>
+    <input id="baseUrl" placeholder="https://ton-site.exemple/client/index.html" />
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div style="flex:1">
+        <label>Identifiant client</label>
+        <input id="userId" placeholder="usr_123" />
+      </div>
+      <div style="flex:1">
+        <label>Référence RDV</label>
+        <input id="appointmentRef" placeholder="appt_456" />
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <button id="btn">Générer & Copier</button>
+    <p class="muted">Le lien inclut les paramètres <code>userId</code> et <code>appointmentRef</code>.</p>
+    <p id="out" class="muted"></p>
+  </div>
+
+  <script>
+    async function generate() {
+      const base = document.getElementById('baseUrl').value.trim();
+      const userId = document.getElementById('userId').value.trim();
+      const appt = document.getElementById('appointmentRef').value.trim();
+      if (!base || !userId || !appt) { alert('Merci de renseigner tous les champs'); return; }
+      const url = new URL(base);
+      url.searchParams.set('userId', userId);
+      url.searchParams.set('appointmentRef', appt);
+      const link = url.toString();
+      try {
+        await navigator.clipboard.writeText(link);
+      } catch {}
+      document.getElementById('out').textContent = link;
+    }
+    document.getElementById('btn').addEventListener('click', generate);
+  </script>
+</body>
+</html>
